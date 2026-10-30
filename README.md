@@ -5,7 +5,8 @@ gets the HTTPS certificates and hands each site's traffic to the app behind it.
 
 | Site | App | Its Caddyfile |
 |---|---|---|
-| `prabuddh.in`, `www.`, `stats.` | the blog (`/srv/prabuddh-me`) | `docker/Caddyfile` in the blog's repository |
+| `prabuddh.in`, `www.` | the blog (`/srv/prabuddh-me`) | `docker/Caddyfile` in the blog's repository |
+| `stats.` | Umami, the blog's statistics (`/srv/umami`) | `caddy/Caddyfile` in `my-umami` |
 | `photos.`, `api.photos.`, `albums.` | Ente Photos (`/srv/ente`) | `caddy/Caddyfile` in `my-ente` |
 
 **Why on its own:** while Caddy was part of the blog's Compose project, `docker compose down`
@@ -17,8 +18,8 @@ stops only that app, and Caddy answers its sites with an error until it's back.
 - **One Docker network, `edge`,** made once by hand. Caddy and each app's web-facing
   containers join it; databases stay on their app's own network. Because no Compose project
   owns it, no `docker compose down` removes it. Names on it are shared by every app, so two
-  apps must never put a service with the same name on it (the blog uses `backend`, `frontend`
-  and `umami`; Ente `museum` and `web`).
+  apps must never put a service with the same name on it (the blog uses `backend` and
+  `frontend`, Umami `umami`, Ente `museum` and `web`).
 - **Each app keeps its own Caddyfile in its own repository.** `compose.yaml` mounts each app's
   folder at `/sites/<app>`, and `caddy/Caddyfile` imports `/sites/*/Caddyfile`. A change to the
   blog's routing still ships with the blog: its deploy validates the whole configuration and
@@ -40,15 +41,35 @@ Run these as the `deploy` user (`sudo -iu deploy`), like everything else in `/sr
    docker network inspect edge --format '{{.EnableIPv6}}'   # true
    ```
 
-2. **Each app's folder, before Caddy.** Caddy refuses to start while a folder it mounts is
-   missing: `/srv/prabuddh-me` (cloned, and started once, so its uploads volume exists) and
-   `/srv/ente`.
+2. **Read access to the repositories,** if they're private. GitHub lets a deploy key open one
+   repository only, so each one the server clones gets its own read-only key, with a name for
+   it in SSH's config. The blog has its key already (its `docs/deployment.md`, Part 1). For this
+   one, as `deploy`:
 
-3. **This folder, at `/srv/edge`.**
+   ```sh
+   ssh-keygen -t ed25519 -f ~/.ssh/github_edge -N "" -C "edge server, read-only"
+   cat >> ~/.ssh/config <<'EOF'
+   Host github-edge
+       HostName github.com
+       IdentityFile ~/.ssh/github_edge
+       IdentitiesOnly yes
+   EOF
+   cat ~/.ssh/github_edge.pub
+   ```
+
+   Add the printed line on GitHub (the repository → **Settings → Deploy keys**, "Allow write
+   access" unticked). The same for `my-umami` and `my-ente`, with `umami` and `ente` in place of
+   `edge`. The clones then use `git@github-edge:PrabuddhMathur/edge.git`, and so on.
+
+3. **Each app's folder, before Caddy.** Caddy refuses to start while a folder it mounts is
+   missing: `/srv/prabuddh-me` (cloned, and started once, so its uploads volume exists),
+   `/srv/umami` and `/srv/ente`, each set up as its own README says.
+
+4. **This folder, at `/srv/edge`.**
 
    ```sh
    sudo mkdir -p /srv/edge && sudo chown deploy:deploy /srv/edge   # as your own user
-   git clone <this repository> /srv/edge                           # as deploy
+   git clone git@github-edge:PrabuddhMathur/edge.git /srv/edge      # as deploy
    cd /srv/edge
    cp .env.example .env && chmod 600 .env
    nano .env
@@ -57,7 +78,7 @@ Run these as the `deploy` user (`sudo -iu deploy`), like everything else in `/sr
    On a new server, start with `ADMIN_ALLOWED_IPS=127.0.0.1/32`, which closes the admin and
    the Umami dashboard to everyone until the blog's Tailscale guide replaces it.
 
-4. **Start.** The DNS records of every site must already point at the server, or Let's
+5. **Start.** The DNS records of every site must already point at the server, or Let's
    Encrypt can't check them and Caddy keeps retrying.
 
    ```sh

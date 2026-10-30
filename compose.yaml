@@ -42,6 +42,13 @@ services:
         bind:
           create_host_path: false
       - blog_media:/srv/media:ro
+      # Umami, the blog's statistics (/srv/umami).
+      - type: bind
+        source: /srv/umami/caddy
+        target: /sites/umami
+        read_only: true
+        bind:
+          create_host_path: false
       # Ente Photos (/srv/ente).
       - type: bind
         source: /srv/ente/caddy
