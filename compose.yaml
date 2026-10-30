@@ -1,0 +1,72 @@
+# The server's front door: Caddy, the only container that faces the internet. It gets the
+# HTTPS certificates and hands each site's traffic to that app's containers. Setup: README.md.
+#
+#   cd /srv/edge && docker compose up -d
+#
+# It runs apart from the apps, so stopping one (docker compose down in its folder) leaves
+# Caddy and the other sites up. Each app keeps its own Caddyfile in its own repository,
+# mounted below at /sites/<app>, and caddy/Caddyfile imports them all.
+
+name: edge
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2.11.4-alpine
+    # A fixed name, so an app's deploy can reach it: docker exec caddy caddy reload ...
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env, e.g. DOMAIN=prabuddh.in}
+      HSTS_SECONDS: ${HSTS_SECONDS:-3600}
+      ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-0.0.0.0/0 ::/0}
+    # Folders, not single files: a file mount keeps showing the old file after git replaces
+    # it, while a folder shows the new one, so "caddy reload" is enough after a change.
+    # A missing folder stops Caddy from starting, rather than Docker making an empty one
+    # owned by root where the app's clone should go.
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      # The blog (/srv/prabuddh-me): its Caddyfile, and its uploads, served at /media/.
+      - type: bind
+        source: /srv/prabuddh-me/docker
+        target: /sites/prabuddh-me
+        read_only: true
+        bind:
+          create_host_path: false
+      - blog_media:/srv/media:ro
+      # Ente Photos (/srv/ente).
+      - type: bind
+        source: /srv/ente/caddy
+        target: /sites/ente
+        read_only: true
+        bind:
+          create_host_path: false
+      # The HTTPS certificates. Don't delete it, or Caddy has to request new ones.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  # Shared with every app's web-facing containers, and made once by hand with IPv6 on
+  # (README.md), so no app's "docker compose down" can remove it.
+  edge:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  # The blog's uploads volume. It must exist (the blog started once) before Caddy starts.
+  blog_media:
+    external: true
+    name: prabuddh-me_backend_media

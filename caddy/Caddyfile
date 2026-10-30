@@ -1,0 +1,5 @@
+# Every site comes from the app that owns it: compose.yaml mounts each app's folder at
+# /sites/<app>, and this loads the Caddyfile in each. DOMAIN, HSTS_SECONDS and
+# ADMIN_ALLOWED_IPS come from .env, through compose.yaml.
+
+import /sites/*/Caddyfile
